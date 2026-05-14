@@ -3,6 +3,8 @@ import {
   createLogDocument,
   createLogSearchSession,
   escapeHtml,
+  getLogLineAtScrollTop,
+  getLogLineScrollTop,
   getVirtualLogWindow,
   parseAnsiLine,
   renderLogLineHtml,
@@ -22,6 +24,12 @@ describe("createLogDocument", () => {
       endOffset: 12,
       hasNewline: true
     });
+  });
+
+  it("uses compact numeric offsets internally while keeping the public API stable", () => {
+    const document = createLogDocument("a\nb");
+
+    expect(document.getLines(1, 2).map((line) => line.startOffset)).toEqual([0, 2]);
   });
 
   it("handles CRLF lines and reports newline diagnostics", () => {
@@ -129,6 +137,16 @@ describe("virtual windows", () => {
   });
 });
 
+describe("scroll helpers", () => {
+  it("maps line numbers and scroll offsets with bounded values", () => {
+    expect(getLogLineScrollTop(42, 20)).toBe(820);
+    expect(getLogLineScrollTop(Number.NaN, 0)).toBe(0);
+    expect(getLogLineAtScrollTop(820, 20)).toBe(42);
+    expect(getLogLineAtScrollTop(Infinity, 0, 100)).toBe(1);
+    expect(getLogLineAtScrollTop(10_000, 20, 100)).toBe(100);
+  });
+});
+
 describe("search sessions", () => {
   it("searches incrementally by line chunks", () => {
     const document = createLogDocument("info boot\nwarn disk\ninfo done\nwarn cpu");
@@ -137,7 +155,7 @@ describe("search sessions", () => {
     const first = session.next(2);
     expect(first.done).toBe(false);
     expect(first.searchedLineCount).toBe(2);
-    expect(first.results).toEqual([
+    expect(first.matches).toEqual([
       {
         lineNumber: 2,
         columnStart: 0,
@@ -147,10 +165,13 @@ describe("search sessions", () => {
         lineText: "warn disk"
       }
     ]);
+    expect(first.results).toEqual(first.matches);
 
     const second = session.next(2);
     expect(second.done).toBe(true);
     expect(second.resultCount).toBe(2);
+    expect(second.matches).toHaveLength(1);
+    expect(second.matches[0]?.lineNumber).toBe(4);
     expect(second.results[1]).toMatchObject({
       lineNumber: 4,
       columnStart: 0,
@@ -237,6 +258,12 @@ describe("ANSI and HTML rendering", () => {
 
     expect(renderLogLineHtml("<warn>", { highlightQuery: "warn" })).toBe(
       "&lt;<mark class=\"llv-match\">warn</mark>&gt;"
+    );
+  });
+
+  it("escapes custom class prefixes in highlight markup", () => {
+    expect(renderLogLineHtml("warn", { highlightQuery: "warn", classPrefix: 'x" bad=' })).toBe(
+      '<mark class="x&quot; bad=-match">warn</mark>'
     );
   });
 

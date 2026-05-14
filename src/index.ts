@@ -68,6 +68,7 @@ export type LogSearchStep = {
   searchedLineCount: number;
   nextLine: number;
   resultCount: number;
+  matches: LogSearchMatch[];
   results: LogSearchMatch[];
 };
 
@@ -125,6 +126,7 @@ export type RenderLogLineHtmlOptions = {
 const ansiPattern = /\x1b\[([0-9;]*)m/g;
 const defaultSearchChunkSize = 2_000;
 const defaultMaxResults = 1_000;
+const maxTypedOffset = 4_294_967_295;
 
 const normalColors = [
   "black",
@@ -221,6 +223,25 @@ export function getVirtualLogWindow(
   };
 }
 
+export function getLogLineScrollTop(lineNumber: number, rowHeight: number): number {
+  const safeLineNumber = Math.max(1, integerOr(lineNumber, 1));
+  const safeRowHeight = Math.max(1, finiteOr(rowHeight, 1));
+  return (safeLineNumber - 1) * safeRowHeight;
+}
+
+export function getLogLineAtScrollTop(
+  scrollTop: number,
+  rowHeight: number,
+  lineCount?: number
+): number {
+  const safeScrollTop = Math.max(0, finiteOr(scrollTop, 0));
+  const safeRowHeight = Math.max(1, finiteOr(rowHeight, 1));
+  const lineNumber = Math.floor(safeScrollTop / safeRowHeight) + 1;
+
+  if (lineCount === undefined) return lineNumber;
+  return clamp(lineNumber, 1, Math.max(1, integerOr(lineCount, 1)));
+}
+
 export function createLogSearchSession(
   document: Pick<LogDocument, "lineCount" | "getLine">,
   query: string,
@@ -253,11 +274,12 @@ export function createLogSearchSession(
     results,
     next(chunkLineCount = defaultSearchChunkSize) {
       if (done) {
-        return snapshotSearchStep(query, searchedLineCount, nextLine, results, true);
+        return snapshotSearchStep(query, searchedLineCount, nextLine, results, [], true);
       }
 
       const chunkSize = Math.max(1, integerOr(chunkLineCount, defaultSearchChunkSize));
       const chunkEndLine = Math.min(endLine, nextLine + chunkSize - 1);
+      const matches: LogSearchMatch[] = [];
 
       for (; nextLine <= chunkEndLine; nextLine += 1) {
         const line = document.getLine(nextLine);
@@ -281,6 +303,7 @@ export function createLogSearchSession(
           };
           if (options.includeLineText) match.lineText = line.text;
           results.push(match);
+          matches.push(match);
           searchFrom = Math.max(columnEnd, columnStart + 1);
         }
 
@@ -291,7 +314,7 @@ export function createLogSearchSession(
       }
 
       if (nextLine > endLine) done = true;
-      return snapshotSearchStep(query, searchedLineCount, nextLine, results, done);
+      return snapshotSearchStep(query, searchedLineCount, nextLine, results, matches, done);
     }
   };
 
@@ -363,8 +386,11 @@ export function escapeHtml(input: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function indexLineStarts(source: string, options: CreateLogDocumentOptions): number[] {
-  if (source.length === 0) return [];
+function indexLineStarts(source: string, options: CreateLogDocumentOptions): Uint32Array {
+  if (source.length === 0) return new Uint32Array(0);
+  if (source.length > maxTypedOffset) {
+    throw new RangeError("Log source is too large for Uint32Array-backed offsets.");
+  }
 
   const lineStarts = [0];
 
@@ -386,12 +412,12 @@ function indexLineStarts(source: string, options: CreateLogDocumentOptions): num
     }
   }
 
-  return lineStarts;
+  return Uint32Array.from(lineStarts);
 }
 
 function getLogLine(
   source: string,
-  lineStarts: readonly number[],
+  lineStarts: ArrayLike<number>,
   lineNumber: number
 ): LogLine | undefined {
   const normalizedLineNumber = integerOr(lineNumber, 0);
@@ -435,7 +461,7 @@ function getContentEndOffset(
 
 function getLogLines(
   source: string,
-  lineStarts: readonly number[],
+  lineStarts: ArrayLike<number>,
   startLine: number,
   count: number
 ): LogLine[] {
@@ -628,7 +654,7 @@ function renderHighlightedText(
     }
 
     output += escapeHtml(input.slice(cursor, start));
-    output += `<mark class="${classPrefix}-match">${escapeHtml(
+    output += `<mark class="${escapeHtml(`${classPrefix}-match`)}">${escapeHtml(
       input.slice(start, start + query.length)
     )}</mark>`;
     cursor = start + query.length;
@@ -642,6 +668,7 @@ function snapshotSearchStep(
   searchedLineCount: number,
   nextLine: number,
   results: LogSearchMatch[],
+  matches: LogSearchMatch[],
   done: boolean
 ): LogSearchStep {
   return {
@@ -650,6 +677,7 @@ function snapshotSearchStep(
     searchedLineCount,
     nextLine,
     resultCount: results.length,
+    matches,
     results
   };
 }

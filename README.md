@@ -55,7 +55,7 @@ Large logs get slow when a viewer does naive work:
 
 This package keeps the core small:
 
-- line indexing stores offsets instead of an array of line strings;
+- line indexing stores compact numeric offsets instead of an array of line strings;
 - virtual windows return only the visible rows plus overscan;
 - search sessions advance by chunks, so UI code can yield between steps;
 - ANSI parsing and HTML escaping can be applied only to visible lines.
@@ -114,6 +114,18 @@ window.rows;
 
 The package does not own your DOM. In React, Vue, Svelte or plain JavaScript, keep scroll state in your app and ask the document for the current window.
 
+Use the scroll helpers when jumping to a line from search results:
+
+```ts
+import { getLogLineAtScrollTop, getLogLineScrollTop } from "large-log-viewer-kit";
+
+const scrollTop = getLogLineScrollTop(42, 20);
+// 820
+
+const lineNumber = getLogLineAtScrollTop(scrollTop, 20, document.lineCount);
+// 42
+```
+
 ## Chunked Search
 
 ```ts
@@ -129,6 +141,9 @@ while (!search.done) {
   // In a browser UI, call the next chunk from requestIdleCallback,
   // setTimeout, a worker message, or your framework scheduler.
   console.log(step.searchedLineCount, step.resultCount);
+
+  // Newly found matches in this chunk only.
+  renderNewMatches(step.matches);
 }
 
 search.results[0];
@@ -143,6 +158,8 @@ search.results[0];
 ```
 
 Use `includeLineText: false` when you only need positions and want to keep result objects smaller.
+
+`session.results` is the cumulative result list. `step.matches` contains only the matches found by the latest `next()` call, which is usually what UI code wants for incremental rendering.
 
 ## ANSI and Safe HTML
 
@@ -203,6 +220,14 @@ type LogDocument = {
 ### `getVirtualLogWindow(document, request)`
 
 Standalone helper used internally by `document.getWindow()`. Use it when you have your own document-like adapter.
+
+### `getLogLineScrollTop(lineNumber, rowHeight)`
+
+Returns the scroll offset for a fixed-height row viewer.
+
+### `getLogLineAtScrollTop(scrollTop, rowHeight, lineCount?)`
+
+Returns the 1-based line number at a scroll offset. Pass `lineCount` to clamp the result to the document bounds.
 
 ### `createLogSearchSession(document, query, options?)`
 

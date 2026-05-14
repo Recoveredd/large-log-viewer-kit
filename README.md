@@ -1,6 +1,5 @@
 # large-log-viewer-kit
 
-[![npm version](https://img.shields.io/npm/v/large-log-viewer-kit.svg)](https://www.npmjs.com/package/large-log-viewer-kit)
 [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/Recoveredd/large-log-viewer-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Recoveredd/large-log-viewer-kit/actions/workflows/ci.yml)
 
@@ -8,7 +7,7 @@ Inspect and render large browser logs with offset indexing, virtual windows, chu
 
 `large-log-viewer-kit` is a small clean-room toolkit for building log viewers without rendering every line in the DOM. It is framework-agnostic, browser-friendly, ESM-only and has no runtime dependencies.
 
-Links: [Demo](https://packages.wasta-wocket.fr/large-log-viewer-kit/) · [npm](https://www.npmjs.com/package/large-log-viewer-kit) · [GitHub](https://github.com/Recoveredd/large-log-viewer-kit)
+Links: [Demo](https://packages.wasta-wocket.fr/large-log-viewer-kit/) · [GitHub](https://github.com/Recoveredd/large-log-viewer-kit)
 
 ## Package quality
 

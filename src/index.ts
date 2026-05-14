@@ -104,6 +104,10 @@ export type AnsiStyle = {
   underline?: boolean;
   color?: AnsiColor;
   backgroundColor?: AnsiColor;
+  colorCode?: number;
+  backgroundColorCode?: number;
+  rgbColor?: readonly [number, number, number];
+  rgbBackgroundColor?: readonly [number, number, number];
 };
 
 export type AnsiSegment = {
@@ -337,8 +341,15 @@ export function renderLogLineHtml(
     .map((segment) => {
       const content = renderHighlightedText(segment.text, options, classPrefix);
       const classes = ansiStyleToClasses(segment.style, classPrefix);
-      if (classes.length === 0) return content;
-      return `<span class="${classes.join(" ")}">${content}</span>`;
+      const inlineStyle = ansiStyleToInlineStyle(segment.style);
+      if (classes.length === 0 && inlineStyle.length === 0) return content;
+
+      const attributes = [
+        classes.length > 0 ? `class="${escapeHtml(classes.join(" "))}"` : "",
+        inlineStyle.length > 0 ? `style="${inlineStyle}"` : ""
+      ].filter(Boolean);
+
+      return `<span ${attributes.join(" ")}>${content}</span>`;
     })
     .join("");
 }
@@ -358,7 +369,16 @@ function indexLineStarts(source: string, options: CreateLogDocumentOptions): num
   const lineStarts = [0];
 
   for (let index = 0; index < source.length; index += 1) {
-    if (source.charCodeAt(index) === 10) {
+    const charCode = source.charCodeAt(index);
+
+    if (charCode === 13) {
+      const hasLfPair = source.charCodeAt(index + 1) === 10;
+      const nextStart = index + (hasLfPair ? 2 : 1);
+      if (nextStart < source.length || options.keepTrailingEmptyLine) {
+        lineStarts.push(nextStart);
+      }
+      if (hasLfPair) index += 1;
+    } else if (charCode === 10) {
       const nextStart = index + 1;
       if (nextStart < source.length || options.keepTrailingEmptyLine) {
         lineStarts.push(nextStart);
@@ -380,20 +400,11 @@ function getLogLine(
   const lineIndex = normalizedLineNumber - 1;
   const startOffset = lineStarts[lineIndex] ?? 0;
   const nextStart = lineStarts[lineIndex + 1];
-  const finalLineEndsWithNewline =
-    nextStart === undefined && source.length > startOffset && source.endsWith("\n");
-  const rawEndOffset =
-    nextStart === undefined
-      ? finalLineEndsWithNewline
-        ? source.length - 1
-        : source.length
-      : nextStart - 1;
   const hasNewline =
-    finalLineEndsWithNewline || (rawEndOffset < source.length && source.charCodeAt(rawEndOffset) === 10);
-  const endOffset =
-    rawEndOffset > startOffset && source.charCodeAt(rawEndOffset - 1) === 13
-      ? rawEndOffset - 1
-      : rawEndOffset;
+    nextStart !== undefined ||
+    (startOffset < source.length && source.endsWith("\n")) ||
+    (source.length > startOffset && source.endsWith("\r"));
+  const endOffset = getContentEndOffset(source, startOffset, nextStart);
 
   return {
     lineNumber: normalizedLineNumber,
@@ -402,6 +413,24 @@ function getLogLine(
     endOffset,
     hasNewline
   };
+}
+
+function getContentEndOffset(
+  source: string,
+  startOffset: number,
+  nextStart: number | undefined
+): number {
+  let endOffset = nextStart ?? source.length;
+
+  if (endOffset > startOffset && source.charCodeAt(endOffset - 1) === 10) {
+    endOffset -= 1;
+  }
+
+  if (endOffset > startOffset && source.charCodeAt(endOffset - 1) === 13) {
+    endOffset -= 1;
+  }
+
+  return endOffset;
 }
 
 function getLogLines(
@@ -445,13 +474,12 @@ function collectDiagnostics(source: string): LogDocumentDiagnostic[] {
 function applyAnsiCodes(style: AnsiStyle, codeText: string): void {
   const codes = codeText.length > 0 ? codeText.split(";").map(Number) : [0];
 
-  for (const code of codes) {
+  for (let index = 0; index < codes.length; index += 1) {
+    const code = codes[index];
+    if (code === undefined) continue;
+
     if (code === 0) {
-      delete style.bold;
-      delete style.italic;
-      delete style.underline;
-      delete style.color;
-      delete style.backgroundColor;
+      resetAnsiStyle(style);
     } else if (code === 1) {
       style.bold = true;
     } else if (code === 3) {
@@ -465,19 +493,93 @@ function applyAnsiCodes(style: AnsiStyle, codeText: string): void {
     } else if (code === 24) {
       delete style.underline;
     } else if (code === 39) {
-      delete style.color;
+      resetAnsiForeground(style);
     } else if (code === 49) {
-      delete style.backgroundColor;
+      resetAnsiBackground(style);
     } else if (code >= 30 && code <= 37) {
+      resetAnsiForeground(style);
       style.color = normalColors[code - 30] as AnsiColor;
     } else if (code >= 90 && code <= 97) {
+      resetAnsiForeground(style);
       style.color = brightColors[code - 90] as AnsiColor;
     } else if (code >= 40 && code <= 47) {
+      resetAnsiBackground(style);
       style.backgroundColor = normalColors[code - 40] as AnsiColor;
     } else if (code >= 100 && code <= 107) {
+      resetAnsiBackground(style);
       style.backgroundColor = brightColors[code - 100] as AnsiColor;
+    } else if (code === 38 || code === 48) {
+      const parsed = parseExtendedAnsiColor(codes, index + 1);
+      if (parsed) {
+        if (code === 38) {
+          resetAnsiForeground(style);
+          if (parsed.kind === "indexed") style.colorCode = parsed.value;
+          else style.rgbColor = parsed.value;
+        } else {
+          resetAnsiBackground(style);
+          if (parsed.kind === "indexed") style.backgroundColorCode = parsed.value;
+          else style.rgbBackgroundColor = parsed.value;
+        }
+        index = parsed.nextIndex - 1;
+      }
     }
   }
+}
+
+function resetAnsiStyle(style: AnsiStyle): void {
+  delete style.bold;
+  delete style.italic;
+  delete style.underline;
+  resetAnsiForeground(style);
+  resetAnsiBackground(style);
+}
+
+function resetAnsiForeground(style: AnsiStyle): void {
+  delete style.color;
+  delete style.colorCode;
+  delete style.rgbColor;
+}
+
+function resetAnsiBackground(style: AnsiStyle): void {
+  delete style.backgroundColor;
+  delete style.backgroundColorCode;
+  delete style.rgbBackgroundColor;
+}
+
+function parseExtendedAnsiColor(
+  codes: readonly number[],
+  startIndex: number
+):
+  | { kind: "indexed"; value: number; nextIndex: number }
+  | { kind: "rgb"; value: readonly [number, number, number]; nextIndex: number }
+  | undefined {
+  const mode = codes[startIndex];
+
+  if (mode === 5) {
+    const colorCode = codes[startIndex + 1];
+    if (isByte(colorCode)) {
+      return {
+        kind: "indexed",
+        value: colorCode,
+        nextIndex: startIndex + 2
+      };
+    }
+  }
+
+  if (mode === 2) {
+    const red = codes[startIndex + 1];
+    const green = codes[startIndex + 2];
+    const blue = codes[startIndex + 3];
+    if (isByte(red) && isByte(green) && isByte(blue)) {
+      return {
+        kind: "rgb",
+        value: [red, green, blue],
+        nextIndex: startIndex + 4
+      };
+    }
+  }
+
+  return undefined;
 }
 
 function ansiStyleToClasses(style: AnsiStyle, classPrefix: string): string[] {
@@ -487,7 +589,20 @@ function ansiStyleToClasses(style: AnsiStyle, classPrefix: string): string[] {
   if (style.underline) classes.push(`${classPrefix}-underline`);
   if (style.color) classes.push(`${classPrefix}-fg-${style.color}`);
   if (style.backgroundColor) classes.push(`${classPrefix}-bg-${style.backgroundColor}`);
+  if (style.colorCode !== undefined) classes.push(`${classPrefix}-fg-ansi-${style.colorCode}`);
+  if (style.backgroundColorCode !== undefined) {
+    classes.push(`${classPrefix}-bg-ansi-${style.backgroundColorCode}`);
+  }
   return classes;
+}
+
+function ansiStyleToInlineStyle(style: AnsiStyle): string {
+  const declarations: string[] = [];
+  if (style.rgbColor) declarations.push(`color: rgb(${style.rgbColor.join(" ")})`);
+  if (style.rgbBackgroundColor) {
+    declarations.push(`background-color: rgb(${style.rgbBackgroundColor.join(" ")})`);
+  }
+  return declarations.join("; ");
 }
 
 function renderHighlightedText(
@@ -541,6 +656,10 @@ function snapshotSearchStep(
 
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
+}
+
+function isByte(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255;
 }
 
 function integerOr(value: number | undefined, fallback: number): number {

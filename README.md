@@ -81,6 +81,9 @@ document.getLine(2);
 ```
 
 Line numbers are 1-based because that is what users expect in a log viewer.
+Offsets are JavaScript string offsets, not byte offsets. If you decode a `Blob` or `Response` before creating the document, the offsets refer to the decoded string.
+
+LF, CRLF and CR-only line endings are indexed. Mixed newline styles are reported through diagnostics.
 
 By default, a trailing newline does not create a final empty line. Enable it when your UI needs to show that final blank row:
 
@@ -163,7 +166,10 @@ Common class names:
 - `llv-bold`, `llv-italic`, `llv-underline`;
 - `llv-fg-red`, `llv-fg-bright-yellow`;
 - `llv-bg-blue`, `llv-bg-bright-black`;
+- `llv-fg-ansi-196`, `llv-bg-ansi-236` for 256-color ANSI codes;
 - `llv-match`.
+
+Truecolor ANSI values are emitted as safe numeric inline `rgb(...)` styles.
 
 Use `classPrefix` if your app needs different class names.
 

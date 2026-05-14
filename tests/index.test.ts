@@ -33,6 +33,34 @@ describe("createLogDocument", () => {
     expect(document.getLine(2)?.text).toBe("two");
   });
 
+  it("splits CR-only logs instead of treating them as one huge line", () => {
+    const document = createLogDocument("one\rtwo\rthree");
+
+    expect(document.diagnostics).toEqual(["contains-cr-only"]);
+    expect(document.lineCount).toBe(3);
+    expect(document.getLines(1, 3).map((line) => line.text)).toEqual([
+      "one",
+      "two",
+      "three"
+    ]);
+  });
+
+  it("handles mixed newline styles", () => {
+    const document = createLogDocument("one\r\ntwo\nthree\rfour");
+
+    expect(document.diagnostics).toEqual([
+      "contains-crlf",
+      "contains-cr-only",
+      "mixed-newlines"
+    ]);
+    expect(document.getLines(1, 4).map((line) => line.text)).toEqual([
+      "one",
+      "two",
+      "three",
+      "four"
+    ]);
+  });
+
   it("can keep a trailing empty line when requested", () => {
     const document = createLogDocument("one\n", { keepTrailingEmptyLine: true });
 
@@ -182,6 +210,22 @@ describe("ANSI and HTML rendering", () => {
     ]);
   });
 
+  it("parses indexed and RGB ANSI colors", () => {
+    expect(parseAnsiLine("\x1b[38;5;196mERR\x1b[0m")[0]).toEqual({
+      text: "ERR",
+      style: {
+        colorCode: 196
+      }
+    });
+
+    expect(parseAnsiLine("\x1b[48;2;12;34;56mBG\x1b[0m")[0]).toEqual({
+      text: "BG",
+      style: {
+        rgbBackgroundColor: [12, 34, 56]
+      }
+    });
+  });
+
   it("strips ANSI escapes", () => {
     expect(stripAnsi("\x1b[32mOK\x1b[0m")).toBe("OK");
   });
@@ -199,6 +243,14 @@ describe("ANSI and HTML rendering", () => {
   it("renders ANSI classes only around visible line content", () => {
     expect(renderLogLineHtml("\x1b[91mFAIL\x1b[0m", { ansi: true })).toBe(
       '<span class="llv-fg-bright-red">FAIL</span>'
+    );
+
+    expect(renderLogLineHtml("\x1b[38;5;196mFAIL\x1b[0m", { ansi: true })).toBe(
+      '<span class="llv-fg-ansi-196">FAIL</span>'
+    );
+
+    expect(renderLogLineHtml("\x1b[38;2;12;34;56mRGB\x1b[0m", { ansi: true })).toBe(
+      '<span style="color: rgb(12 34 56)">RGB</span>'
     );
   });
 });

@@ -18,7 +18,11 @@ Links: [Demo](https://packages.wasta-wocket.fr/large-log-viewer-kit/) · [GitHub
 - CI runs `npm ci`, `typecheck`, `build`, and `test`.
 - Tested on Node.js 20 and 22 with GitHub Actions.
 
-## Install
+## Publication status
+
+This package is currently a GitHub preview and is queued for npm publication. The browser demo is available now, and the install command below is the command to use once the npm package is published.
+
+## Install after npm publication
 
 ```bash
 npm install large-log-viewer-kit

@@ -188,7 +188,7 @@ Common class names:
 
 Truecolor ANSI values are emitted as safe numeric inline `rgb(...)` styles.
 
-Use `classPrefix` if your app needs different class names.
+Use `classPrefix` if your app needs different class names. Non identifier-like characters are normalized to `-`, so accidental spaces or quotes cannot create malformed class attributes.
 
 ## API
 

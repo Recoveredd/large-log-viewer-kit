@@ -308,6 +308,7 @@ export function createLogSearchSession(
         }
 
         if (results.length >= maxResults) {
+          nextLine = line.lineNumber + 1;
           done = true;
           break;
         }
@@ -357,7 +358,7 @@ export function renderLogLineHtml(
   input: string,
   options: RenderLogLineHtmlOptions = {}
 ): string {
-  const classPrefix = options.classPrefix ?? "llv";
+  const classPrefix = normalizeClassPrefix(options.classPrefix);
   const segments = options.ansi ? parseAnsiLine(input) : [{ text: input, style: {} }];
 
   return segments
@@ -629,6 +630,11 @@ function ansiStyleToInlineStyle(style: AnsiStyle): string {
     declarations.push(`background-color: rgb(${style.rgbBackgroundColor.join(" ")})`);
   }
   return declarations.join("; ");
+}
+
+function normalizeClassPrefix(prefix: string | undefined): string {
+  const normalized = (prefix ?? "llv").replace(/[^a-zA-Z0-9_-]/g, "-");
+  return normalized.length > 0 ? normalized : "llv";
 }
 
 function renderHighlightedText(

@@ -191,6 +191,7 @@ describe("search sessions", () => {
     expect(step.done).toBe(true);
     expect(step.results).toHaveLength(1);
     expect(step.results[0]?.lineNumber).toBe(2);
+    expect(step.nextLine).toBe(3);
   });
 
   it("treats an empty query as already done", () => {
@@ -261,9 +262,9 @@ describe("ANSI and HTML rendering", () => {
     );
   });
 
-  it("escapes custom class prefixes in highlight markup", () => {
+  it("normalizes custom class prefixes in highlight markup", () => {
     expect(renderLogLineHtml("warn", { highlightQuery: "warn", classPrefix: 'x" bad=' })).toBe(
-      '<mark class="x&quot; bad=-match">warn</mark>'
+      '<mark class="x--bad--match">warn</mark>'
     );
   });
 
